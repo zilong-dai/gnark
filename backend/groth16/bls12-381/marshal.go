@@ -19,6 +19,10 @@ package groth16
 import (
 	curve "github.com/consensys/gnark-crypto/ecc/bls12-381"
 
+	"bytes"
+	"encoding/hex"
+	"encoding/json"
+
 	"github.com/consensys/gnark-crypto/ecc/bls12-381/fr/pedersen"
 	"github.com/consensys/gnark/internal/utils"
 	"io"
@@ -371,4 +375,208 @@ func (pk *ProvingKey) readFrom(r io.Reader, decOptions ...func(*curve.Decoder)) 
 	}
 
 	return n + dec.BytesRead(), nil
+}
+
+func (p Proof) MarshalJSON() ([]byte, error) {
+	var buf [48*2]byte
+	var writer bytes.Buffer
+
+	for i := 0; i < len(p.Commitments); i++ {
+		buf = p.Commitments[i].RawBytes()
+		_, err := writer.Write(buf[:])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	proof_map := map[string]interface{}{
+		"PiA": hex.EncodeToString((&p.Ar).Marshal()),
+		"PiB": hex.EncodeToString((&p.Bs).Marshal()),
+		"PiC": hex.EncodeToString((&p.Krs).Marshal()),
+		"Commitments": hex.EncodeToString(writer.Bytes()),
+		"CommitmentPok": hex.EncodeToString((&p.CommitmentPok).Marshal()),
+	}
+	return json.Marshal(proof_map)
+}
+
+func (p *Proof) UnmarshalJSON(data []byte) error {
+	var ProofString struct {
+		PiA string
+		PiB string
+		PiC string
+		Commitments string
+		CommitmentPok string
+	}
+
+	err := json.Unmarshal(data, &ProofString)
+	if err != nil {
+		return err
+	}
+
+	pia_bytes, err := hex.DecodeString(ProofString.PiA)
+	if err != nil {
+		return err
+	}
+	err = p.Ar.Unmarshal(pia_bytes)
+	if err != nil {
+		return err
+	}
+
+	pib_bytes, err := hex.DecodeString(ProofString.PiB)
+	if err != nil {
+		return err
+	}
+	err = p.Bs.Unmarshal(pib_bytes)
+	if err != nil {
+		return err
+	}
+
+	pic_bytes, err := hex.DecodeString(ProofString.PiC)
+	if err != nil {
+		return err
+	}
+	err = p.Krs.Unmarshal(pic_bytes)
+	if err != nil {
+		return err
+	}
+
+	com_bytes, err := hex.DecodeString(ProofString.Commitments)
+	if err != nil {
+		return err
+	}
+	len := len(com_bytes)/96
+	p.Commitments = make([]curve.G1Affine, len)
+	for i := 0; i < len; i++ {
+		err = p.Commitments[i].Unmarshal(com_bytes[96*i:96*(i+1)])
+		if err != nil {
+			return err
+		}
+	}
+
+	compok_bytes, err := hex.DecodeString(ProofString.CommitmentPok)
+	if err != nil {
+		return err
+	}
+	err = p.CommitmentPok.Unmarshal(compok_bytes)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+
+func (vk VerifyingKey) MarshalJSON() ([]byte, error) {
+	var buf [48*2]byte
+	var writer bytes.Buffer
+
+	for i := 0; i < len(vk.G1.K); i++ {
+		buf = vk.G1.K[i].RawBytes()
+		_, err := writer.Write(buf[:])
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	vk_map := map[string]interface{}{
+		"Alpha": hex.EncodeToString((&vk.G1.Alpha).Marshal()),
+		"K": hex.EncodeToString(writer.Bytes()),
+		"Beta": hex.EncodeToString((&vk.G2.Beta).Marshal()),
+		"Gamma": hex.EncodeToString((&vk.G2.Gamma).Marshal()),
+		"Delta": hex.EncodeToString((&vk.G2.Delta).Marshal()),
+		"CommitmentKeyG": hex.EncodeToString((&vk.CommitmentKey.G).Marshal()),
+		"CommitmentKeyGRoot": hex.EncodeToString((&vk.CommitmentKey.GRootSigmaNeg).Marshal()),
+		"PublicAndCommitmentCommitted": vk.PublicAndCommitmentCommitted, 
+	}
+
+	return json.Marshal(vk_map)
+}
+
+func (vk *VerifyingKey) UnmarshalJSON(data []byte) error {
+	var VerifyingKeyString struct {
+		Alpha string
+		K string
+		Beta string
+		Gamma string
+		Delta string
+		CommitmentKeyG string
+		CommitmentKeyGRoot string
+		PublicAndCommitmentCommitted [][]int
+	}
+
+	err := json.Unmarshal(data, &VerifyingKeyString)
+	if err != nil {
+		return err
+	}
+
+	alpha_bytes, err := hex.DecodeString(VerifyingKeyString.Alpha)
+	if err != nil {
+		return err
+	}
+	err = vk.G1.Alpha.Unmarshal(alpha_bytes)
+	if err != nil {
+		return err
+	}
+
+	k_bytes, err := hex.DecodeString(VerifyingKeyString.K)
+	if err != nil {
+		return err
+	}
+	len := len(k_bytes)/96
+	vk.G1.K = make([]curve.G1Affine, len)
+	for i := 0; i < len; i++ {
+		err = vk.G1.K[i].Unmarshal(k_bytes[96*i:96*(i+1)])
+		if err != nil {
+			return err
+		}
+	}
+
+	beta_bytes, err := hex.DecodeString(VerifyingKeyString.Beta)
+	if err != nil {
+		return err
+	}
+	err = vk.G2.Beta.Unmarshal(beta_bytes)
+	if err != nil {
+		return err
+	}
+
+	gamma_bytes, err := hex.DecodeString(VerifyingKeyString.Gamma)
+	if err != nil {
+		return err
+	}
+	err = vk.G2.Gamma.Unmarshal(gamma_bytes)
+	if err != nil {
+		return err
+	}
+
+	delta_bytes, err := hex.DecodeString(VerifyingKeyString.Delta)
+	if err != nil {
+		return err
+	}
+	err = vk.G2.Delta.Unmarshal(delta_bytes)
+	if err != nil {
+		return err
+	}
+
+	comkey_g_bytes, err := hex.DecodeString(VerifyingKeyString.CommitmentKeyG)
+	if err != nil {
+		return err
+	}
+	err = vk.CommitmentKey.G.Unmarshal(comkey_g_bytes)
+	if err != nil {
+		return err
+	}
+
+	comkey_groot_bytes, err := hex.DecodeString(VerifyingKeyString.CommitmentKeyGRoot)
+	if err != nil {
+		return err
+	}
+	err = vk.CommitmentKey.GRootSigmaNeg.Unmarshal(comkey_groot_bytes)
+	if err != nil {
+		return err
+	}
+
+	vk.PublicAndCommitmentCommitted = VerifyingKeyString.PublicAndCommitmentCommitted
+
+	return nil
 }
