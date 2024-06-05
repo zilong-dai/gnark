@@ -21,7 +21,7 @@ func init() {
 	if !debug.Debug && strings.HasSuffix(os.Args[0], ".test") {
 		logger = zerolog.Nop()
 	}
-
+	zerolog.SetGlobalLevel(zerolog.ErrorLevel)
 }
 
 // SetOutput changes the output of the global logger
